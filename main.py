@@ -15,9 +15,35 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
+import logging
+import os
+import sys
+import traceback
+
+from dawn import setup
 
 
-def main():
+VERSION = "PRE"
+TITLE = "DAWN TRADE BOT"
+
+
+if getattr(sys, "frozen", False):  # Check if program is compiled to exe
+    PATH = os.path.dirname(sys.executable)
+else:
+    PATH = os.path.dirname(os.path.abspath(__file__))
+
+
+log = logging.getLogger("main")
+
+
+async def main():
+
+    config = setup.load_config(os.path.join(PATH, "config.ini"))
+    try:
+        setup.setup_logging(PATH, config["DEBUG"]["logging_level"])
+    except KeyError:
+        setup.setup_logging(PATH)
+
     return
 
 
