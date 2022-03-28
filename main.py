@@ -20,7 +20,7 @@ import os
 import sys
 import traceback
 
-from dawn import setup
+from dawn import utils
 
 
 VERSION = "PRE"
@@ -38,11 +38,11 @@ log = logging.getLogger("main")
 
 async def main():
 
-    config = setup.load_config(os.path.join(PATH, "config.ini"))
+    config = utils.load_config(os.path.join(PATH, "config.ini"))
     try:
-        setup.setup_logging(PATH, config["DEBUG"]["logging_level"])
+        utils.setup_logging(PATH, config["DEBUG"]["logging_level"])
     except KeyError:
-        setup.setup_logging(PATH)
+        utils.setup_logging(PATH)
 
     return
 
