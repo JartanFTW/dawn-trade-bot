@@ -44,7 +44,7 @@ class Database:
     async def _create_connection(self) -> None:
         self._conn = await aiosqlite.connect(self.db_path)
 
-    async def _update(self) -> str:
+    async def _migrate(self) -> str:
         """
         Updates the database to the latest version
         Returns the new version of the database
@@ -103,6 +103,6 @@ class Database:
                 os.path.join(self.path, "schema.sql")
             )  # Running schema setup
         else:
-            await self._update()  # update tasks
+            await self._migrate()  # update tasks
 
         return self
