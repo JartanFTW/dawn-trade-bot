@@ -15,7 +15,7 @@ class Database:
         pass
 
     @classmethod
-    def create_database_file(cls, path: str, name: str) -> None:
+    async def create_database_file(cls, path: str, name: str) -> None:
         """
         Creates an empty database file
         Raises FileExistsError if file already exists
@@ -24,7 +24,8 @@ class Database:
         """
         db_path = os.path.join(path, f"{name}.db")
         if not os.path.isfile(db_path):
-            open(db_path).close()
+            task = asyncio.create_task(asyncio.to_thread(open(db_path).close()))
+            await asyncio.wait(task)
         else:
             raise FileExistsError(file=db_path)
 
@@ -39,7 +40,7 @@ class Database:
             file - path of the file to open
         """
         task = asyncio.create_task(asyncio.to_thread(self._read_file(file)))
-        script = await asyncio.wait(task)[0]
+        script = await asyncio.gather(task)[0]
         await self._conn.executescript(script)
 
     async def _create_connection(self) -> None:
@@ -62,10 +63,10 @@ class Database:
         # doing it like this we save space and just have it incrementally update through the versions rather than having to program for every combination
 
         # if version == 1.0:
-        #     do stuff
+        #     do stuff IN ANOTHER FUNCTION
         #     version = 1.1 or whatever this version is changing to
         # if version == 1.1:
-        #     do stuff
+        #     do stuff IN ANOTHER FUNCTION
         #     version = 1.2
 
         if version == prev_vers:
@@ -92,10 +93,7 @@ class Database:
 
         if not os.path.isfile(self.db_path):
             try:
-                task = asyncio.create_task(
-                    asyncio.to_thread(self.create_database_file(self.path, self.name))
-                )
-                await asyncio.gather(task)
+                await self.create_database_file(self.path, self.name)
                 new_db = True
             except FileExistsError:
                 pass

@@ -78,6 +78,6 @@ CREATE TABLE collectable_ownership (
     -- other details about the item as needed
 
     PRIMARY KEY (userassetsid),
-    FOREIGN KEY (collectable_id) REFERENCES collectable(id),
-    FOREIGN KEY (user_id) REFERENCES roblox_user(id)
+    FOREIGN KEY (collectable_id) REFERENCES collectable (id),
+    FOREIGN KEY (user_id) REFERENCES roblox_user (id)
 );
