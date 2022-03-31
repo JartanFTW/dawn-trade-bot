@@ -58,7 +58,15 @@ CREATE TABLE trade (
 
     -- add some scoring details
 
-    PRIMARY KEY (gitem1, gitem2, gitem3, gitem4)
+    PRIMARY KEY (gitem1, gitem2, gitem3, gitem4),
+    FOREIGN KEY (gitem1) REFERENCES collectable (id),
+    FOREIGN KEY (gitem2) REFERENCES collectable (id),
+    FOREIGN KEY (gitem3) REFERENCES collectable (id),
+    FOREIGN KEY (gitem4) REFERENCES collectable (id),
+    FOREIGN KEY (titem1) REFERENCES collectable (id),
+    FOREIGN KEY (titem2) REFERENCES collectable (id),
+    FOREIGN KEY (titem3) REFERENCES collectable (id),
+    FOREIGN KEY (titem4) REFERENCES collectable (id)
 );
 
 CREATE TABLE collectable_ownership (
