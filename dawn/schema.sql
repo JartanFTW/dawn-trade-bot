@@ -1,3 +1,5 @@
+PRAGMA user_version = 1;
+
 CREATE TABLE cookie (
     roblosecurity text(764),
     user int(16),
