@@ -10,7 +10,8 @@ log = logging.getLogger(__name__)
 
 
 class Database:
-    def __init__():
+    def __init__(self):
+        self.conn = property(self.get_conn)
         pass
 
     @classmethod
@@ -43,6 +44,9 @@ class Database:
 
     async def _create_connection(self) -> None:
         self._conn = await aiosqlite.connect(self.db_path)
+
+    def get_conn(self) -> aiosqlite.Connection:
+        return self._conn
 
     async def _migrate(self) -> str:
         """
