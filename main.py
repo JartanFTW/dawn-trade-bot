@@ -20,7 +20,7 @@ import os
 import sys
 import traceback
 
-from dawn import utils
+from dawn import utils, load_proxies
 
 
 VERSION = "PRE"
@@ -43,6 +43,11 @@ async def main():
         utils.setup_logging(PATH, config["DEBUG"]["logging_level"])
     except KeyError:
         utils.setup_logging(PATH)
+
+    try:
+        proxies = await load_proxies(os.path.join(PATH, "proxies.txt"))
+    except FileNotFoundError:
+        proxies = None
 
     return
 
