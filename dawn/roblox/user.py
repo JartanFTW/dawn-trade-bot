@@ -87,8 +87,10 @@ class User:
     async def get_inventory(self, user_id: str | int, proxies: dict = None) -> list:
         """
         Returns the full inventory of the provided user
+            user_id - id of the user
+            proxies - optional proxies to use
         """
-        if user_id == self.id:
+        if int(user_id) == int(self.id):
             return await self.inventory(proxies=proxies)
 
         return await self._get_inventory(user_id, proxies=proxies)
@@ -96,6 +98,7 @@ class User:
     async def inventory(self, proxies: dict = None) -> list:
         """
         Returns the full inventory of the associated user
+            proxies - optional proxies to use
         """
 
         if (
