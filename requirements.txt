@@ -1,1 +1,2 @@
 aiosqlite>=0.17.0
+httpx>=0.21.3
