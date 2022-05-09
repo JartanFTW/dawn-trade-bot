@@ -1,6 +1,7 @@
 import asyncio
-from datetime import datetime
+from contextlib import asynccontextmanager
 import logging
+import time
 
 import httpx
 
@@ -26,40 +27,65 @@ class InvalidCookie(Exception):
 class User:
     def __init__(self):
         self._last_updated_inventory = None
-        pass
 
-    def __del__(self):
-        if isinstance(self._client, property):
-            asyncio.create_task(self._client.aclose())
+    @asynccontextmanager
+    async def __context_create(self, security_cookie: str, proxies: dict = None):
+        """
+        Context manager version of User.create
+        """
 
-    @classmethod
-    async def create(cls, security_cookie: str, proxies: dict = None):
+        await self.create(security_cookie, proxies)
+
+        try:
+            yield self
+        finally:
+            await self.close()
+
+    async def create(self, security_cookie: str, proxies: dict = None):
         """
         Initializes the user class, checking the cookie's validity in the process
         Returns User
             security_cookie - roblosecurity cookie to use
-            proxy - optional proxy dict to use for initialization requests
+            proxy - optional proxy dict to use for ALL requests done with this user
         """
-        self = User()
 
         self._roblosecurity = f"_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_{security_cookie.split('_')[-1].strip()}"
 
-        self._client = httpx.AsyncClient(cookies={})
-        self._client.cookies[".ROBLOSECURITY"] = self._roblosecurity
+        self._client = httpx.AsyncClient(proxies=proxies)
+        self._client.cookies.set(".ROBLOSECURITY", self._roblosecurity)
 
-        await self._authenticate(proxies=proxies)  # grab user data thus checks cookie
+        await self._authenticate()
 
         return self
 
-    async def _request(self, method: str, url: str, **kwargs):
-        method = method.lower()
+    async def close(self):
+        await self._client.aclose()
 
-        response = await self._client.Request(method, url, **kwargs)
-        if method != "get":
-            if "x-csrf-token" in response.headers.keys():
-                self._client.cookies["X-CSRF-TOKEN"] = response.headers["x-csrf-token"]
-                if response.status_code == 403:
-                    response = await self._client.Request(method, url, **kwargs)
+    async def __request(self, method: str, url: str, **kwargs) -> httpx.Response:
+
+        method = method.upper()
+
+        # updates csrf token if needed
+        if method != "get" and self._client.cookies.get("X-CSRF-TOKEN") == None:
+            c = await self._client.request("post", "https://auth.roblox.com/v1/logout")
+            self._client.cookies.set("X-CSRF-TOKEN", c.headers["x-csrf-token"])
+
+        # main req
+        csrf = self._client.cookies.get("X-CSRF-TOKEN")
+        response = await self._client.request(
+            method,
+            url,
+            headers={"X-CSRF-TOKEN": csrf},
+            **kwargs,
+        )
+        # TODO add handling for httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError and all 500 responses
+
+        # keeps latest csrf token updated
+        if (
+            "x-csrf-token" in response.headers.keys()
+            and response.headers["x-csrf-token"] != csrf
+        ):
+            self._client.cookies.set("X-CSRF-TOKEN", response.headers["x-csrf-token"])
 
         if response.status_code == 401:
             raise InvalidCookie(
@@ -68,11 +94,13 @@ class User:
                 url=response.url,
             )
 
+        # TODO add 429 handling
+
         return response
 
-    async def _authenticate(self, proxies: dict = None) -> bool | None:
-        response = await self.client._request(
-            "get", "https://users.roblox.com/v1/users/authenticated", proxies=proxies
+    async def _authenticate(self) -> None:
+        response = await self.client.__request(
+            "get", "https://users.roblox.com/v1/users/authenticated"
         )
 
         if response.status_code == 200:
@@ -80,50 +108,48 @@ class User:
             self.id = respjson["id"]
             self.name = respjson["name"]
             self.displayname = respjson["displayName"]
-            return True
 
-        return False
+        # TODO add raise unknownresponse
 
-    async def get_inventory(self, user_id: str | int, proxies: dict = None) -> list:
+    async def get_inventory(self, user_id: str | int) -> list:
         """
         Returns the full inventory of the provided user
             user_id - id of the user
-            proxies - optional proxies to use
         """
         if int(user_id) == int(self.id):
-            return await self.inventory(proxies=proxies)
+            return await self.inventory()
 
-        return await self._get_inventory(user_id, proxies=proxies)
+        return await self._get_inventory(user_id)
 
-    async def inventory(self, proxies: dict = None) -> list:
+    async def inventory(self) -> list:
         """
-        Returns the full inventory of the associated user
-            proxies - optional proxies to use
+        Returns the full inventory of the class associated user
         """
 
+        # hardcoding minimum 30 second interval between rechecking own inventory
         if (
             self._last_updated_inventory
-            and (datetime.now() - self._last_updated_inventory).seconds < 30
-        ):  # hardcoding minimum 30 second interval between rechecking inventory
+            and time.time() > self._last_updated_inventory + 30
+        ):
             return self._inv
 
-        self._inv = await self._get_inventory(self.id, proxies=proxies)
-        self._last_updated_inventory = datetime.now()
+        self._inv = await self._get_inventory(self.id)
+        self._last_updated_inventory = time.time()
         return self._inv
 
-    async def _get_inventory(
-        self, user_id: str | int, cursor: str = None, proxies: dict = None
-    ):
+    async def _get_inventory(self, user_id: str | int, cursor: str = None) -> list:
         url = f"https://inventory.roblox.com/v1/users/{user_id}/assets/collectibles?sortOrder=Asc&limit=100"
 
         if cursor:
             url += f"&cursor={cursor}"
 
-        resp = self._request("get", url, proxies=proxies)
+        resp = self.__request("get", url)
+        # TODO add check for correct response code & handle otherwise
         respjson = resp.json()
         inventory = respjson["data"]
         if respjson["nextPageCursor"]:
+            # recursion depth = total_collectables_count / 100 = currently around 22 pages increasing VERY slowly (non-problem)
             inventory += await self._get_inventory(
-                user_id, cursor=respjson["nextPageCursor"], proxies=proxies
+                user_id, cursor=respjson["nextPageCursor"]
             )
         return inventory
