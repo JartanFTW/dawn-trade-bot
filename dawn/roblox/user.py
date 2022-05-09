@@ -5,7 +5,7 @@ import time
 
 import httpx
 
-from ..errors import InvalidCookie, RetryError
+from ..errors import InvalidCookie, RetryError, UnhandledResponse
 
 log = logging.getLogger(__name__)
 
@@ -52,8 +52,8 @@ class User:
 
         method = method.upper()
 
-        # updates csrf token if needed
-        if method != "get" and self._client.cookies.get("X-CSRF-TOKEN") is None:
+        # init csrf token if needed
+        if self._client.cookies.get("X-CSRF-TOKEN") is None:
             c = await self._client.request("post", "https://auth.roblox.com/v1/logout")
             self._client.cookies.set("X-CSRF-TOKEN", c.headers["x-csrf-token"])
 
@@ -122,8 +122,11 @@ class User:
             self.id = respjson["id"]
             self.name = respjson["name"]
             self.displayname = respjson["displayName"]
+            return
 
-        # TODO add raise unknownresponse
+        raise UnhandledResponse(
+            response=response, url=response.url, proxy=self._proxies
+        )
 
     async def get_inventory(self, user_id: str | int) -> list:
         """

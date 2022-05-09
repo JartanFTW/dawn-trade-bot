@@ -10,14 +10,21 @@ class InvalidCookie(Exception):
         self.response_code = response_code
         self.url = url
         self.proxy = proxy
-        self.err = f"Invalid roblosecurity cookie suspected from response {response_code} calling {url}"
+        self.err = f"Invalid roblosecurity cookie suspected from {response_code} response calling {url}"
         super().__init__(self.err)
 
 
 class UnhandledResponse(Exception):
-    def __init__(self, response: str):
+    def __init__(
+        self,
+        response: str,
+        url: str = None,
+        proxy: str = None,
+    ):
         self.response = response
-        self.err = f"Unhandled response {response.status_code}"
+        self.url = url
+        self.proxy = proxy
+        self.err = f"Unhandled response {response.status_code} calling {url}"
         super().__init__(self.err)
 
 
