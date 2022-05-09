@@ -5,23 +5,9 @@ import time
 
 import httpx
 
+from ..errors import InvalidCookie, RetryError
+
 log = logging.getLogger(__name__)
-
-
-class InvalidCookie(Exception):
-    def __init__(
-        self,
-        cookie: str,
-        response_code: int = None,
-        url: str = None,
-        proxy: str = None,
-    ):
-        self.cookie = cookie
-        self.response_code = response_code
-        self.url = url
-        self.proxy = proxy
-        self.err = f"Invalid roblosecurity cookie suspected from response {response_code} calling {url}"
-        super().__init__(self.err)
 
 
 class User:
@@ -50,6 +36,7 @@ class User:
         """
 
         self._roblosecurity = f"_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_{security_cookie.split('_')[-1].strip()}"
+        self._proxies = proxies
 
         self._client = httpx.AsyncClient(proxies=proxies)
         self._client.cookies.set(".ROBLOSECURITY", self._roblosecurity)
@@ -66,19 +53,23 @@ class User:
         method = method.upper()
 
         # updates csrf token if needed
-        if method != "get" and self._client.cookies.get("X-CSRF-TOKEN") == None:
+        if method != "get" and self._client.cookies.get("X-CSRF-TOKEN") is None:
             c = await self._client.request("post", "https://auth.roblox.com/v1/logout")
             self._client.cookies.set("X-CSRF-TOKEN", c.headers["x-csrf-token"])
 
         # main req
         csrf = self._client.cookies.get("X-CSRF-TOKEN")
-        response = await self._client.request(
-            method,
-            url,
-            headers={"X-CSRF-TOKEN": csrf},
-            **kwargs,
-        )
-        # TODO add handling for httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError and all 500 responses
+        try:
+            response = await self._client.request(
+                method,
+                url,
+                headers={"X-CSRF-TOKEN": csrf},
+                **kwargs,
+            )
+            timed_out = False
+        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError):
+            # TODO add logging
+            timed_out = True
 
         # keeps latest csrf token updated
         if (
@@ -87,6 +78,29 @@ class User:
         ):
             self._client.cookies.set("X-CSRF-TOKEN", response.headers["x-csrf-token"])
 
+        ### response handling below
+
+        # retries 5**, 429, and timed out responses with exponential increasing delay
+        if timed_out or response.status_code >= 500 or response.status_code == 429:
+            if not hasattr(self, "_retries"):
+                self._retries = 1
+            else:
+                self._retries += 1
+
+            delay = 2 ** self._retries
+
+            if self._retries > 8:
+                raise RetryError(
+                    url=url,
+                    retries=self._retries,
+                    response_code=response.status_code,
+                    proxy=self._proxies,
+                )
+
+            # TODO logging
+            await asyncio.sleep(delay)
+            return await self.__request(method, url, **kwargs)
+
         if response.status_code == 401:
             raise InvalidCookie(
                 self._roblosecurity,
@@ -94,7 +108,7 @@ class User:
                 url=response.url,
             )
 
-        # TODO add 429 handling
+        ### end response handling
 
         return response
 
