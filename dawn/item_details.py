@@ -6,6 +6,7 @@ import httpx
 
 from database import DatabaseManager
 from roblox.user import User
+from errors import UnhandledResponse
 
 log = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ class ItemDetailsManager:
             # TODO ADD LOGGING (everywhere lol but especially here)
             await asyncio.sleep(60)
             # recursion opens up possible memory leaks unnecessarily. some sort of looping implementation should be done to
-            # gradually increase delays between checks for the unlikely events of prolongued downtime of rolimons
+            # gradually increase delays between checks for the unlikely events of prolongued downtime of rolimons # an example of this was created in User.__request()
             # it's more likely for prolongued downtime to be user internet outage instead
             # this concern applies elsewhere in Dawn also. Recursion should be updated out with larger solutions in any
             # situation where we don't know the maximum recursion depth inherently (trade calculations) TODO
@@ -100,9 +101,26 @@ class ItemDetailsManager:
 
         if resp.status_code == 200:
             self._rolimons_itemdetails = resp.json()
+            self.__last_updated_rolimons = time.time()
 
-        # TODO add unknown response error
+        raise UnhandledResponse(resp, url=resp.url)
 
     async def _update_item_data(self, id: int):
+
+        """
+        id int(16),
+        roli_value int(8) DEFAULT NULL, -- other valuation methods can be added later
+        rap int(8),
+        updated DATE DEFAULT (datetime('now', 'unixepoch')),
+        3d_rap int(8) DEFAULT NULL,
+        7d_rap int(8) DEFAULT NULL,
+        14d_rap int(8) DEFAULT NULL,
+        30d_rap int(8) DEFAULT NULL,
+        90d_rap int(8) DEFAULT NULL,
+        180d_rap int(8) DEFAULT NULL,
+        date_created DATE NOT NULL,
+        """
+        # TODO
+
         pass
         # will call lower functions to gather all itemdata, then insert or replace into database
