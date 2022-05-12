@@ -46,9 +46,7 @@ class ItemDetailsManager:
 
         for collectable in collectables:
             if int(collectable) not in db_collectables:
-                # self._update_item_data(collectable)
-                pass
-                # add to database
+                self._update_item_data(collectable)
 
         await asyncio.sleep(self.new_collectibles_scan_delay)
 
@@ -80,6 +78,7 @@ class ItemDetailsManager:
         return inventory
 
     async def _get_rolimons_itemdetails(self) -> None:
+        # TODO add semaphore to prevent mass spamming rolimons api when many items are in queue for refresh
         if time.time() > self.__last_updated_rolimons + 60:
             await self._update_rolimons_itemdetails()
         return self._rolimons_itemdetails
@@ -105,22 +104,35 @@ class ItemDetailsManager:
 
         raise UnhandledResponse(resp, url=resp.url)
 
-    async def _update_item_data(self, id: int):
+    async def _update_item_data(self, id: int | str) -> None:
+        # TODO when custom value algorithm is being implemented, change rap source to roblox themselves rather than rolimons for accuracy
 
-        """
-        id int(16),
-        roli_value int(8) DEFAULT NULL, -- other valuation methods can be added later
-        rap int(8),
-        updated DATE DEFAULT (datetime('now', 'unixepoch')),
-        3d_rap int(8) DEFAULT NULL,
-        7d_rap int(8) DEFAULT NULL,
-        14d_rap int(8) DEFAULT NULL,
-        30d_rap int(8) DEFAULT NULL,
-        90d_rap int(8) DEFAULT NULL,
-        180d_rap int(8) DEFAULT NULL,
-        date_created DATE NOT NULL,
-        """
-        # TODO
+        await self._get_rolimons_itemdetails()
 
-        pass
-        # will call lower functions to gather all itemdata, then insert or replace into database
+        # api items list format because api is super minimalistic to reduce bandwidth use
+        # [item_name, acronym, rap, value, default_value, demand, trend, projected, hyped, rare]
+        data = (
+            str(id),
+            self._rolimon_itemdetails["items"][str(id)][2],
+            self._rolimon_itemdetails["items"][str(id)][3],
+            int(time.time()),
+        )
+
+        # maybe sql injection vulnerability? idk feedback on github please
+        await self.db.conn.executescript(
+            """
+            UPDATE INTO 
+            collectable (id, rap, roli_value, updated)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (ID) DO UPDATE SET
+                rap=excluded.rap,
+                roli_value=excluded.roli_value,
+                updated=excluded.updated
+            """,
+            (
+                data[0],
+                data[1],
+                data[2],
+                data[3],
+            ),  # formatting here may be wrong. needs testing
+        )

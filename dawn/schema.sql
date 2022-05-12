@@ -18,18 +18,10 @@ CREATE TABLE collectable (
     roli_value int(8) DEFAULT NULL, -- other valuation methods can be added later
     rap int(8),
     updated DATE DEFAULT (datetime('now', 'unixepoch')),
-    3d_rap int(8) DEFAULT NULL,
-    7d_rap int(8) DEFAULT NULL,
-    14d_rap int(8) DEFAULT NULL,
-    30d_rap int(8) DEFAULT NULL,
-    90d_rap int(8) DEFAULT NULL,
-    180d_rap int(8) DEFAULT NULL,
-    date_created DATE NOT NULL,
 
     -- any extra data we may need 
 
     PRIMARY KEY (id)
-    FOREIGN KEY (id) REFERENCES trade (id)
 );
 
 CREATE TABLE roblox_user (
