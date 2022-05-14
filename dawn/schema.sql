@@ -15,8 +15,8 @@ CREATE TABLE cookie (
 
 CREATE TABLE collectable (
     id int(16),
-    roli_value int(8) DEFAULT NULL, -- other valuation methods can be added later
     rap int(8),
+    roli_value int(8) DEFAULT NULL, -- other valuation methods can be added later
     updated DATE DEFAULT (datetime('now', 'unixepoch')),
 
     -- any extra data we may need 
@@ -69,7 +69,7 @@ CREATE TABLE collectable_ownership (
 
     -- other details about the item as needed
 
-    PRIMARY KEY (userassetsid),
+    PRIMARY KEY (userassetid),
     FOREIGN KEY (collectable_id) REFERENCES collectable (id),
     FOREIGN KEY (user_id) REFERENCES roblox_user (id)
 );
