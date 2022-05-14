@@ -67,3 +67,16 @@ def setup_logging(path: str, level: int = 40) -> None:
         level=level,
         format="%(asctime)s:%(levelname)s:%(message)s",
     )
+
+
+def write_file(file: str, content: str = None) -> None:
+    if not content:
+        content = ""
+    with open(file, "w") as stream:
+        stream.write(content)
+
+
+def read_file(file: str) -> str:
+    with open(file, "r") as stream:
+        content = stream.read()
+    return content
