@@ -130,3 +130,5 @@ dmypy.json
 
 # Horizon
 logs/
+test.py
+test.db
