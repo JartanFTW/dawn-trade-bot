@@ -4,9 +4,9 @@ import time
 
 import httpx
 
-from database import DatabaseManager
-from roblox.user import User
-from errors import UnhandledResponse
+from .database import DatabaseManager
+from .roblox.user import User
+from .errors import UnhandledResponse
 
 log = logging.getLogger(__name__)
 
@@ -25,29 +25,33 @@ class ItemDetailsManager:
 
         self._client = httpx.AsyncClient()
         self.itemdetails = property(self._get_rolimons_itemdetails)
+        self.__rolimons_semaphore = asyncio.Semaphore(1)
 
     async def start(self, **kwargs):
         for arg in kwargs:
             setattr(self, arg[0], arg[1])
 
-        self.__new_collectible_scan_task = asyncio.create_task()
+        self.__new_collectible_scan_task = asyncio.create_task(
+            self._new_collectables_manager()
+        )
 
     async def stop(self):
-        await self.__new_collectible_scan_task.cancel()
+        self.__new_collectible_scan_task.cancel()
 
     async def close(self):
         await self.stop()
         await self._client.aclose()
 
     async def _new_collectables_manager(self):
+        # collectables = await self._get_all_item_ids()
+        # db_collectables = await self.db.fetchall("SELECT id from collectable")
         collectables, db_collectables = await asyncio.gather(
             self._get_all_item_ids(), self.db.fetchall("SELECT id FROM collectable")
         )
 
         for collectable in collectables:
             if int(collectable) not in db_collectables:
-                self._update_item_data(collectable)
-
+                await self._update_item_data(collectable)
         await asyncio.sleep(self.new_collectibles_scan_delay)
 
     async def _get_all_item_ids(self) -> list:
@@ -73,14 +77,17 @@ class ItemDetailsManager:
         inventory = respjson["data"]
 
         if respjson["nextPageCursor"]:  # recursion
-            inventory += await self._get_inventory(cursor=respjson["nextPageCursor"])
+            inventory += await self._get_all_collectables(
+                cursor=respjson["nextPageCursor"]
+            )
 
         return inventory
 
     async def _get_rolimons_itemdetails(self) -> None:
-        # TODO add semaphore to prevent mass spamming rolimons api when many items are in queue for refresh
-        if time.time() > self.__last_updated_rolimons + 60:
-            await self._update_rolimons_itemdetails()
+        # semaphore encompasses time check else it'd spam rolimons one by one pointlessly
+        async with self.__rolimons_semaphore:
+            if time.time() > self.__last_updated_rolimons + 60:
+                await self.__update_rolimons_itemdetails()
         return self._rolimons_itemdetails
 
     async def __update_rolimons_itemdetails(self) -> None:
@@ -97,10 +104,10 @@ class ItemDetailsManager:
             # this concern applies elsewhere in Dawn also. Recursion should be updated out with larger solutions in any
             # situation where we don't know the maximum recursion depth inherently (trade calculations) TODO
             return await self.__update_rolimons_itemdetails()
-
         if resp.status_code == 200:
             self._rolimons_itemdetails = resp.json()
             self.__last_updated_rolimons = time.time()
+            return
 
         raise UnhandledResponse(resp, url=resp.url)
 
@@ -113,26 +120,21 @@ class ItemDetailsManager:
         # [item_name, acronym, rap, value, default_value, demand, trend, projected, hyped, rare]
         data = (
             str(id),
-            self._rolimon_itemdetails["items"][str(id)][2],
-            self._rolimon_itemdetails["items"][str(id)][3],
+            self._rolimons_itemdetails["items"][str(id)][2],
+            self._rolimons_itemdetails["items"][str(id)][3],
             int(time.time()),
         )
 
-        # maybe sql injection vulnerability? idk feedback on github please
-        await self.db.conn.executescript(
+        await self.db.conn.execute(
             """
-            UPDATE INTO 
+            INSERT INTO 
             collectable (id, rap, roli_value, updated)
-            VALUES (%s, %s, %s, %s)
+            VALUES (?, ?, ?, ?)
             ON CONFLICT (ID) DO UPDATE SET
                 rap=excluded.rap,
                 roli_value=excluded.roli_value,
                 updated=excluded.updated
             """,
-            (
-                data[0],
-                data[1],
-                data[2],
-                data[3],
-            ),  # formatting here may be wrong. needs testing
+            parameters=data,
         )
+        await self.db.conn.commit()
