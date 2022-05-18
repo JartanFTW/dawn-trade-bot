@@ -1,7 +1,7 @@
 import asyncio
-from contextlib import asynccontextmanager
 import logging
 import time
+from typing import TypeVar
 
 import httpx
 
@@ -9,43 +9,43 @@ from ..errors import InvalidCookie, RetryError, UnhandledResponse
 
 log = logging.getLogger(__name__)
 
+USERTYPE = TypeVar("USERTYPE", bound="User")
+
 
 class User:
-    def __init__(self):
-        self._last_updated_inventory = None
-
-    @asynccontextmanager
-    async def __context_create(self, security_cookie: str, proxies: dict = None):
+    def __init__(self, security_cookie: str, proxies: dict = None):
         """
-        Context manager version of User.create
+        security_cookie - roblosecurity cookie to use
+        proxy - optional proxy dict to use for ALL requests done with this user
         """
-
-        await self.create(security_cookie, proxies)
-
-        try:
-            yield self
-        finally:
-            await self.close()
-
-    async def create(self, security_cookie: str, proxies: dict = None):
-        """
-        Initializes the user class, checking the cookie's validity in the process
-        Returns User
-            security_cookie - roblosecurity cookie to use
-            proxy - optional proxy dict to use for ALL requests done with this user
-        """
-
         self._roblosecurity = f"_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_{security_cookie.split('_')[-1].strip()}"
         self._proxies = proxies
 
         self._client = httpx.AsyncClient(proxies=proxies)
         self._client.cookies.set(".ROBLOSECURITY", self._roblosecurity)
 
+        self._last_updated_inventory = None
+
+    async def __aenter__(self, *args, **kwargs) -> None:
+        """
+        Context maager version of User.create
+        """
         await self._authenticate()
 
+    async def __aexit__(self, *args, **kwargs) -> None:
+        await self.close()
+
+    @classmethod
+    async def create(cls, *args, **kwargs) -> USERTYPE:
+        """
+        Factory method creation of User object
+        Initializes the user class, checking the cookie's validity in the process
+        """
+        self = User(*args, **kwargs)
+        await self._authenticate()
         return self
 
-    async def close(self):
+    async def close(self) -> None:
         await self._client.aclose()
 
     async def __request(self, method: str, url: str, **kwargs) -> httpx.Response:
@@ -113,7 +113,7 @@ class User:
         return response
 
     async def _authenticate(self) -> None:
-        response = await self.client.__request(
+        response = await self.__request(
             "get", "https://users.roblox.com/v1/users/authenticated"
         )
 
@@ -160,7 +160,7 @@ class User:
         if cursor:
             url += f"&cursor={cursor}"
 
-        resp = self.__request("get", url)
+        resp = await self.__request("get", url)
         # TODO add check for correct response code & handle otherwise
         respjson = resp.json()
         inventory = respjson["data"]
