@@ -1,3 +1,18 @@
+# Dawn Trade Bot
+# Copyright (C) 2022  Jonathan Carter
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import asyncio
 import logging
 import time
@@ -21,14 +36,20 @@ class ItemDetailsManager:
         self.new_collectibles_scan_delay = new_collectibles_scan_delay
 
         self.__last_updated_rolimons = time.time() - 60  # init -60
-        self._rolimons_itemdetails = None
+        self._rolidetails = None
 
-        self._client = httpx.AsyncClient()
-        self.itemdetails = property(self._get_rolimons_itemdetails)
+        self.itemdetails = property(self._get_rolidetails)
         self.__rolimons_semaphore = asyncio.Semaphore(1)
 
     async def start(self, **kwargs):
-        for arg in kwargs:
+        """
+        Starts subtasks - stop with ItemDetailsManager.stop()
+        """
+
+        # starting httpx client in here to remove need for close, making only stop necessary
+        self._client = httpx.AsyncClient()
+
+        for arg in kwargs:  # TODO change to named optional parameters for delays
             setattr(self, arg[0], arg[1])
 
         self.__new_collectible_scan_task = asyncio.create_task(
@@ -36,27 +57,31 @@ class ItemDetailsManager:
         )
 
     async def stop(self):
+        """
+        Stops subtasks - start with ItemDetailsManager.start()
+        """
         self.__new_collectible_scan_task.cancel()
 
-    async def close(self):
-        await self.stop()
         await self._client.aclose()
 
     async def _new_collectables_manager(self):
-        # collectables = await self._get_all_item_ids()
-        # db_collectables = await self.db.fetchall("SELECT id from collectable")
-        collectables, db_collectables = await asyncio.gather(
-            self._get_all_item_ids(), self.db.fetchall("SELECT id FROM collectable")
-        )
+        """
+        Periodically grabs the inventory of user 1 and compares to collectables entered in database
+        If new collectables are detected, enters into database
+        """
+        while True:
+            collectables, db_collectables = await asyncio.gather(
+                self._get_all_item_ids(), self.db.fetchall("SELECT id FROM collectable")
+            )
 
-        for collectable in collectables:
-            if int(collectable) not in db_collectables:
-                await self._update_item_data(collectable)
-        await asyncio.sleep(self.new_collectibles_scan_delay)
+            for collectable in collectables:
+                if int(collectable) not in db_collectables:
+                    await self._update_item_data(collectable)
+            await asyncio.sleep(self.new_collectibles_scan_delay)
 
     async def _get_all_item_ids(self) -> list:
         """
-        Scrapes and returns all item ids in a list
+        Scrapes and returns all ROBLOX item ids into a list
         """
 
         items = await self._get_all_collectables()
@@ -65,7 +90,11 @@ class ItemDetailsManager:
 
     async def _get_all_collectables(
         self, cursor: str = None
-    ) -> list:  # basically a copy of user.py's _get_inventory
+    ) -> list:  # basically a copy of user.py's _fetch_inventory
+        """
+        Grabs all collectables from the inventory of the user ROBLOX (id 1), which is one copy of every item
+            cursor - page to start from
+        """
         url = f"https://inventory.roblox.com/v1/users/1/assets/collectibles?sortOrder=Asc&limit=100"
 
         if cursor:
@@ -83,14 +112,24 @@ class ItemDetailsManager:
 
         return inventory
 
-    async def _get_rolimons_itemdetails(self) -> None:
+    async def _get_rolidetails(self) -> dict:
+        """
+        Returns rolimons itemdetails data updated within the last minute
+        """
+
         # semaphore encompasses time check else it'd spam rolimons one by one pointlessly
         async with self.__rolimons_semaphore:
             if time.time() > self.__last_updated_rolimons + 60:
                 await self.__update_rolimons_itemdetails()
-        return self._rolimons_itemdetails
+        return self._rolidetails
 
     async def __update_rolimons_itemdetails(self) -> None:
+        """
+        Updates class _rolidetails
+        _rolidetails format:
+        [item_name, acronym, rap, value, default_value, demand, trend, projected, hyped, rare]
+        """
+
         url = f"https://www.rolimons.com/itemapi/itemdetails"
 
         try:
@@ -105,23 +144,26 @@ class ItemDetailsManager:
             # situation where we don't know the maximum recursion depth inherently (trade calculations) TODO
             return await self.__update_rolimons_itemdetails()
         if resp.status_code == 200:
-            self._rolimons_itemdetails = resp.json()
+            self._rolidetails = resp.json()
             self.__last_updated_rolimons = time.time()
             return
 
         raise UnhandledResponse(resp, url=resp.url)
 
-    async def _update_item_data(self, id: int | str) -> None:
+    async def _update_item_data(self, id: int) -> None:
+        """
+        Updates database collectable table for the provided item id
+            id - the collectable id to update
+        """
+
         # TODO when custom value algorithm is being implemented, change rap source to roblox themselves rather than rolimons for accuracy
 
-        await self._get_rolimons_itemdetails()
+        rolidetails = await self._get_rolidetails()
 
-        # api items list format because api is super minimalistic to reduce bandwidth use
-        # [item_name, acronym, rap, value, default_value, demand, trend, projected, hyped, rare]
         data = (
             str(id),
-            self._rolimons_itemdetails["items"][str(id)][2],
-            self._rolimons_itemdetails["items"][str(id)][3],
+            rolidetails["items"][str(id)][2],
+            rolidetails["items"][str(id)][3],
             int(time.time()),
         )
 

@@ -1,55 +1,65 @@
+# Dawn Trade Bot
+# Copyright (C) 2022  Jonathan Carter
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import asyncio
 import logging
 import os
-import sys
-import traceback
-from typing import TypeVar
+from typing_extensions import Self
 
 import aiosqlite
-from numpy import str0
 
 from .utils import write_file, read_file
 
 log = logging.getLogger(__name__)
 
-# used for typehinting creation classmethod
-DBMTYPE = TypeVar("DBMTYPE", bound="DatabaseManager")
-
 
 class DatabaseManager:
-    def __init__(self, path: str, db_name: str, version: str):
+    def __init__(self, path: str, db_name: str):
         """
-        path - the location of the database file
+        path - path to containing folder of the db file
         db_name - the name of the database file
-        version - the version of the Database running (to do version upgrade changes to database)
         """
         self.path = path
         self.name = db_name
         self.db_path = os.path.join(path, f"{db_name}.db")
-        self.version = version
 
-        # asynchronously calls self.create() and waits for its completion before continuing
-
-    async def __aenter__(self, *args, **kwargs) -> None:
+    async def __aenter__(self) -> None:
         """
         Context manager version of DatabaseManager.create
         """
-
         await self._setup()
-
         return self
 
     async def __aexit__(self, *args, **kwargs) -> None:
         await self.close()
 
     @classmethod
-    async def create(self, *args, **kwargs) -> DBMTYPE:
+    async def create(cls, *args, **kwargs) -> Self:
         """
-        Factory method creation of DatabaseManager object
+        Factory method creation of DatabaseManager object returns DatabaseManager
+        Calls setup processes and handles migration
+            path - path to containing folder of the db file
+            db_name - the name of the database file
         """
-        db = DatabaseManager(*args, **kwargs)
-        await db._setup()
-        return db
+        self = DatabaseManager(*args, **kwargs)
+        await self._setup()
+        return self
+
+    async def close(self) -> None:
+        await self._conn.close()
 
     async def _setup(self):
         """
@@ -73,7 +83,7 @@ class DatabaseManager:
         await self._create_connection()
 
         if new_db:
-            # Running schema setup
+            # running schema setup
             await self._execute_script_from_file(
                 os.path.join(self.path, "dawn", "schema.sql")
             )
@@ -82,9 +92,6 @@ class DatabaseManager:
             await self._migrate()
 
         return self
-
-    async def close(self) -> None:
-        await self._conn.close()
 
     async def create_database_file(self, path: str, name: str) -> None:
         """
@@ -135,20 +142,19 @@ class DatabaseManager:
     @property
     def conn(self) -> aiosqlite.Connection:
         # TODO add check that connection is active, and handle if not
+        # not doing this unless problems arise that demand it
         return self._conn
 
-    async def _migrate(self) -> str:
+    async def _migrate(self) -> int | None:
         """
         Updates the database to the latest version
         Returns the new version of the database
         Returns None if no changes were made
 
         """
-        prev_vers = await self.conn.execute(
-            "PRAGMA user_version;"
-        )  # query version of db
-        version = await prev_vers.fetchone()
-        version = version[0]
+        prev_vers = await self.fetchone("PRAGMA user_version;")  # query version of db
+        prev_vers = prev_vers[0]
+        version = prev_vers
 
         # EXAMPLE:
         # doing it like this we save space and just have it incrementally update through the versions rather than having to program for every combination
