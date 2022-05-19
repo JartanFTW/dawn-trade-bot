@@ -31,9 +31,11 @@ class ItemDetailsManager:
         self,
         db: DatabaseManager,
         new_collectibles_scan_delay: int = 3600,
+        update_collectables_delay: int = 60,
     ):
         self.db = db
         self.new_collectibles_scan_delay = new_collectibles_scan_delay
+        self.update_collectables_delay = update_collectables_delay
 
         self.__last_updated_rolimons = time.time() - 60  # init -60
         self._rolidetails = None
@@ -43,7 +45,7 @@ class ItemDetailsManager:
 
     async def start(self, **kwargs):
         """
-        Starts subtasks - stop with ItemDetailsManager.stop()
+        Starts worker tasks - stop with ItemDetailsManager.stop()
         """
 
         # starting httpx client in here to remove need for close, making only stop necessary
@@ -52,19 +54,23 @@ class ItemDetailsManager:
         for arg in kwargs:  # TODO change to named optional parameters for delays
             setattr(self, arg[0], arg[1])
 
-        self.__new_collectible_scan_task = asyncio.create_task(
-            self._new_collectables_manager()
+        self.__new_collectables_worker_task = asyncio.create_task(
+            self._new_collectables_worker()
+        )
+        self.__existing_collectables_worker_task = asyncio.create_task(
+            self._existing_collectables_worker()
         )
 
     async def stop(self):
         """
-        Stops subtasks - start with ItemDetailsManager.start()
+        Stops worker tasks - start with ItemDetailsManager.start()
         """
-        self.__new_collectible_scan_task.cancel()
+        self.__new_collectables_worker_task.cancel()
+        self.__existing_collectables_worker_task.cancel()
 
         await self._client.aclose()
 
-    async def _new_collectables_manager(self):
+    async def _new_collectables_worker(self):
         """
         Periodically grabs the inventory of user 1 and compares to collectables entered in database
         If new collectables are detected, enters into database
@@ -78,6 +84,20 @@ class ItemDetailsManager:
                 if int(collectable) not in db_collectables:
                     await self._update_item_data(collectable)
             await asyncio.sleep(self.new_collectibles_scan_delay)
+
+    async def _existing_collectables_worker(self):
+        """
+        Periodically queries the database collectables table, updating entries that haven't been updated recently
+        """
+        while True:
+            collectables = await self.db.fetchall("SELECT id FROM collectable")
+
+            # choosing to do iterative approach rather than spawning lots of asynchronous tasks to prevent large memory spikes
+            # if speed is a noticeable issue, can implement some sort of batching
+            for id in collectables:
+                await self._update_item_data(id)
+
+            await asyncio.sleep(self.update_collectables_delay)
 
     async def _get_all_item_ids(self) -> list:
         """
