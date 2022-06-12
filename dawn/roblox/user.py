@@ -32,6 +32,9 @@ class User:
         security_cookie - roblosecurity cookie to use
         proxies - optional proxy dict to use for ALL requests done with this user
         """
+
+        log.info("Initializing roblox user")
+
         self.__roblosecurity = f"_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_{security_cookie.split('_')[-1].strip()}"
         self.__proxies = proxies
 
@@ -68,6 +71,8 @@ class User:
         """
         General purpose low level request handling systems
         """
+
+        log.info(f"Roblox user {method} request {url}")
 
         # init csrf token if needed
         try:
@@ -142,6 +147,8 @@ class User:
         """
         Gathers basic account details and self assigns it
         """
+        log.info("Authenticating roblox account")
+
         response = await self.__request(
             "get", "https://users.roblox.com/v1/users/authenticated"
         )
@@ -162,6 +169,8 @@ class User:
         Returns the full inventory of the provided user
             user_id - target user roblox id
         """
+        log.info(f"Getting roblox inventory {user_id}")
+
         if user_id == self.id:
             return await self.inventory()
 
@@ -171,6 +180,7 @@ class User:
         """
         Returns the full inventory of the logged in user
         """
+        log.info("Getting user roblox inventory")
 
         # hardcoded minimum 30 second interval between rechecking own inventory
         if (

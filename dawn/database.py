@@ -32,6 +32,8 @@ class DatabaseManager:
         path - path to containing folder of the db file
         db_name - the name of the database file
         """
+        log.info("Initializing database manager")
+
         self.path = path
         self.name = db_name
         self.db_path = os.path.join(path, f"{db_name}.db")
@@ -69,6 +71,8 @@ class DatabaseManager:
             3. Runs update tasks based on input version
             4. Returns self
         """
+        log.info(f"Setting up database")
+
         new_db = False
 
         # creating database file if it doesn't exist
@@ -101,6 +105,9 @@ class DatabaseManager:
             name - what to name the database file
         """
         db_path = os.path.join(path, f"{name}.db")
+
+        log.debug(f"Creating database file {db_path}")
+
         if not os.path.isfile(db_path):
             await asyncio.to_thread(write_file, db_path)
         else:
@@ -111,10 +118,14 @@ class DatabaseManager:
         Opens and executes a the provided file as a command in another thread to prevent async blocking
             file - path of the file to open
         """
+        log.debug(f"Database executing script from file {file}")
+
         script = await asyncio.to_thread(read_file, file)
         await self.conn.executescript(script)
 
     async def _create_connection(self) -> None:
+        log.info("Creating database connection")
+
         self._conn = await aiosqlite.connect(self.db_path)
 
     async def fetchone(self, query: str):
@@ -122,6 +133,8 @@ class DatabaseManager:
         Queries and fetches one matching line from the database
             query - the query to execute on the database
         """
+
+        log.debug(f"Database fetchone {query}")
 
         cursor = await self.conn.execute(query)
         row = await cursor.fetchone()
@@ -133,6 +146,8 @@ class DatabaseManager:
         Queries and fetches all matching lines from the database
             query - the query to execute on the database
         """
+
+        log.debug(f"Database fetchall {query}")
 
         cursor = await self.conn.execute(query)
         rows = await cursor.fetchall()
@@ -152,6 +167,8 @@ class DatabaseManager:
         Returns None if no changes were made
 
         """
+        log.info("Migrating database")
+
         prev_vers = await self.fetchone("PRAGMA user_version;")  # query version of db
         prev_vers = prev_vers[0]
         version = prev_vers

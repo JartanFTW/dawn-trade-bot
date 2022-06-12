@@ -33,6 +33,8 @@ class ItemDetailsManager:
         new_collectibles_scan_delay: int = 3600,
         update_collectables_delay: int = 60,
     ):
+        log.info("Initializing Item Details Manager")
+
         self.db = db
         self.new_collectibles_scan_delay = new_collectibles_scan_delay
         self.update_collectables_delay = update_collectables_delay
@@ -47,6 +49,8 @@ class ItemDetailsManager:
         """
         Starts worker tasks - stop with ItemDetailsManager.stop()
         """
+
+        log.info("Starting Item Details Manager")
 
         # starting httpx client in here to remove need for close, making only stop necessary
         self._client = httpx.AsyncClient()
@@ -65,6 +69,9 @@ class ItemDetailsManager:
         """
         Stops worker tasks - start with ItemDetailsManager.start()
         """
+
+        log.info("Stopping Item Details Manager")
+
         self.__new_collectables_worker_task.cancel()
         self.__existing_collectables_worker_task.cancel()
 
@@ -75,6 +82,9 @@ class ItemDetailsManager:
         Periodically grabs the inventory of user 1 and compares to collectables entered in database
         If new collectables are detected, enters into database
         """
+
+        log.debug("New collectables worker beginning")
+
         while True:
             collectables, db_collectables = await asyncio.gather(
                 self._get_all_item_ids(), self.db.fetchall("SELECT id FROM collectable")
@@ -89,6 +99,9 @@ class ItemDetailsManager:
         """
         Periodically queries the database collectables table, updating entries that haven't been updated recently
         """
+
+        log.debug("Existing collectables worker beginning")
+
         while True:
             collectables = await self.db.fetchall("SELECT id FROM collectable")
 
@@ -104,11 +117,13 @@ class ItemDetailsManager:
         Scrapes and returns all ROBLOX item ids into a list
         """
 
-        items = await self._get_all_collectables()
+        log.debug("Scraping all collectable item ids")
+
+        items = await self.__get_all_collectables()
         item_ids = [x["assetId"] for x in items]
         return item_ids
 
-    async def _get_all_collectables(
+    async def __get_all_collectables(
         self, cursor: str = None
     ) -> list:  # basically a copy of user.py's _fetch_inventory
         """
@@ -126,7 +141,7 @@ class ItemDetailsManager:
         inventory = respjson["data"]
 
         if respjson["nextPageCursor"]:  # recursion
-            inventory += await self._get_all_collectables(
+            inventory += await self.__get_all_collectables(
                 cursor=respjson["nextPageCursor"]
             )
 
@@ -136,6 +151,8 @@ class ItemDetailsManager:
         """
         Returns rolimons itemdetails data updated within the last minute
         """
+
+        log.info("Getting rolidetails")
 
         # semaphore encompasses time check else it'd spam rolimons one by one pointlessly
         async with self.__rolimons_semaphore:
